@@ -1,13 +1,12 @@
 """
 main.py — FastAPI Application
 ===============================
-The entry point for the RAG backend. Provides three endpoints:
-
-  POST /sync-drive  →  Fetch files from Google Drive, process, and store in FAISS
-  POST /query       →  Answer user questions using retrieved context + LLM
-  GET  /health      →  Health check with index status
+POST /sync-drive  →  Fetch files from Google Drive, process, store in FAISS
+POST /query       →  Answer questions using retrieved context + LLM
+GET  /health      →  Health check with index status
 
 Run with:
+  source venv/bin/activate
   uvicorn main:app --reload
 """
 
@@ -16,6 +15,7 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from drive import fetch_all_files
@@ -23,22 +23,14 @@ from embedding import process_documents, get_embeddings
 from vectorstore import VectorStore
 from rag import generate_answer
 
-
-# ──────────────────────────────────────────────
-# Load environment variables from .env file
-# ──────────────────────────────────────────────
+# ── Load .env first ────────────────────────────────────────────
 load_dotenv()
 
-# Embedding dimension for all-MiniLM-L6-v2
+# ── Global vector store ────────────────────────────────────────
 EMBEDDING_DIM = 384
-
-# Global vector store instance
 vector_store = VectorStore(EMBEDDING_DIM)
 
 
-# ──────────────────────────────────────────────
-# Startup: try to load a previously saved index
-# ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load saved FAISS index on startup if it exists."""
@@ -48,83 +40,84 @@ async def lifespan(app: FastAPI):
         print(f"🚀 Loaded existing index: {vector_store}")
     except FileNotFoundError:
         print("ℹ️  No saved index found. Use POST /sync-drive to create one.")
-    yield  # App runs here
+    yield
     print("👋 Shutting down RAG server.")
 
 
-# ──────────────────────────────────────────────
-# FastAPI App
-# ──────────────────────────────────────────────
+# ── FastAPI app ────────────────────────────────────────────────
 app = FastAPI(
     title="RAG API",
-    description=(
-        "A Retrieval-Augmented Generation backend that syncs documents from "
-        "Google Drive, stores them as vector embeddings in FAISS, and answers "
-        "questions using an LLM."
-    ),
+    description="Retrieval-Augmented Generation backend with Google Drive integration.",
     version="1.0.0",
     lifespan=lifespan,
 )
 
+# Allow the React dev server to call the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# ──────────────────────────────────────────────
-# Request / Response Models
-# ──────────────────────────────────────────────
+
+# ── Request / Response models ──────────────────────────────────
 class SyncRequest(BaseModel):
-    """Request body for the /sync-drive endpoint."""
     folder_id: str | None = Field(
         default=None,
-        description="Google Drive folder ID. Falls back to GOOGLE_DRIVE_FOLDER_ID env var.",
+        description="Drive folder ID. Falls back to GOOGLE_DRIVE_FOLDER_ID env var.",
     )
 
+
 class SyncResponse(BaseModel):
-    """Response from the /sync-drive endpoint."""
     message: str
     files_processed: int
     chunks_created: int
     index_size: int
 
+
 class QueryRequest(BaseModel):
-    """Request body for the /query endpoint."""
     question: str = Field(..., description="The question to answer.")
     top_k: int = Field(default=5, ge=1, le=20, description="Number of chunks to retrieve.")
 
+
 class QueryResponse(BaseModel):
-    """Response from the /query endpoint."""
     answer: str
     sources: list[dict]
     num_results: int
 
+
 class HealthResponse(BaseModel):
-    """Response from the /health endpoint."""
     status: str
     index_loaded: bool
     index_size: int
     dimension: int
 
 
-# ──────────────────────────────────────────────
-# POST /sync-drive — Sync documents from Google Drive
-# ──────────────────────────────────────────────
+# ── POST /sync-drive ───────────────────────────────────────────
 @app.post("/sync-drive", response_model=SyncResponse)
 def sync_drive(request: SyncRequest = SyncRequest()):
     """
-    Fetch files from a Google Drive folder, extract text, create
-    embeddings, and store everything in the FAISS vector store.
+    Fetch files from Google Drive, extract text, create embeddings,
+    and store in the FAISS vector store.
     """
     global vector_store
 
-    # Determine folder ID
     folder_id = request.folder_id or os.getenv("GOOGLE_DRIVE_FOLDER_ID")
     if not folder_id or folder_id == "your_drive_folder_id_here":
         raise HTTPException(
             status_code=400,
-            detail="No folder ID provided. Set GOOGLE_DRIVE_FOLDER_ID in .env "
-                   "or pass folder_id in the request body.",
+            detail=(
+                "No folder ID provided. Set GOOGLE_DRIVE_FOLDER_ID in .env "
+                "or pass folder_id in the request body."
+            ),
         )
 
     try:
-        # Step 1: Fetch files from Google Drive
         files = fetch_all_files(folder_id)
         if not files:
             raise HTTPException(
@@ -132,14 +125,9 @@ def sync_drive(request: SyncRequest = SyncRequest()):
                 detail="No supported files found in the Drive folder.",
             )
 
-        # Step 2: Process documents (extract → chunk → embed)
         chunks, embeddings = process_documents(files)
-
-        # Step 3: Clear old data and store new embeddings
         vector_store.clear()
         vector_store.add(embeddings, chunks)
-
-        # Step 4: Save to disk for persistence
         vector_store.save("faiss_store")
 
         return SyncResponse(
@@ -150,42 +138,30 @@ def sync_drive(request: SyncRequest = SyncRequest()):
         )
 
     except HTTPException:
-        raise  # Re-raise FastAPI exceptions as-is
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
 
 
-# ──────────────────────────────────────────────
-# POST /query — Ask a question
-# ──────────────────────────────────────────────
+# ── POST /query ────────────────────────────────────────────────
 @app.post("/query", response_model=QueryResponse)
 def query(request: QueryRequest):
     """
-    Answer a question using RAG:
-    1. Embed the question
-    2. Search FAISS for relevant chunks
-    3. Generate an answer using the LLM
+    Embed the question, search FAISS for relevant chunks,
+    and generate an answer using the LLM.
     """
     global vector_store
 
-    # Check if the index has data
     if len(vector_store) == 0:
         raise HTTPException(
             status_code=400,
-            detail="Vector store is empty. Run POST /sync-drive first.",
+            detail="Vector store is empty. Run POST /sync-drive first to load documents.",
         )
 
     try:
-        # Step 1: Embed the user's question
         query_embedding = get_embeddings([request.question])[0]
-
-        # Step 2: Search for relevant chunks
         results = vector_store.search(query_embedding, k=request.top_k)
-
-        # Step 3: Extract the text chunks for the LLM
         context_chunks = [r["text"] for r in results]
-
-        # Step 4: Generate answer using RAG
         answer = generate_answer(request.question, context_chunks)
 
         return QueryResponse(
@@ -202,12 +178,10 @@ def query(request: QueryRequest):
         raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 
 
-# ──────────────────────────────────────────────
-# GET /health — Health check
-# ──────────────────────────────────────────────
+# ── GET /health ────────────────────────────────────────────────
 @app.get("/health", response_model=HealthResponse)
 def health():
-    """Check the API status and vector store info."""
+    """Check server status and vector store info."""
     return HealthResponse(
         status="healthy",
         index_loaded=len(vector_store) > 0,
