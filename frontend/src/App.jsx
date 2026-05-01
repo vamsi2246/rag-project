@@ -25,10 +25,10 @@ function ChatIcon({ active }) {
 
 function LogoMark() {
   return (
-    <div className="relative w-8 h-8 flex-shrink-0">
-      <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 opacity-90" />
-      <div className="absolute inset-0 rounded-xl flex items-center justify-center">
-        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <div className="relative w-9 h-9 flex-shrink-0">
+      <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600" />
+      <div className="absolute inset-0 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/40">
+        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
         </svg>
       </div>
@@ -100,19 +100,19 @@ export default function App() {
       <div className="ambient-glow-2" aria-hidden="true" />
 
       {/* ── Sidebar ──────────────────────────── */}
-      <aside className="sidebar-bg relative z-10 w-60 flex flex-col py-5 px-3 flex-shrink-0">
+      <aside className="sidebar-bg relative z-10 w-64 flex flex-col py-6 px-3 flex-shrink-0">
         {/* Logo */}
-        <div className="flex items-center gap-2.5 px-2 mb-7">
+        <div className="flex items-center gap-3 px-2 mb-8">
           <LogoMark />
           <div className="min-w-0">
-            <p className="text-sm font-bold text-white leading-tight tracking-tight">DocMind AI</p>
-            <p className="text-[10px] text-slate-600 uppercase tracking-[0.12em] mt-0.5">RAG Platform</p>
+            <p className="text-[15px] font-bold text-white leading-tight tracking-tight">DocMind AI</p>
+            <p className="text-[10px] text-slate-600 uppercase tracking-[0.14em] mt-0.5">RAG Platform</p>
           </div>
         </div>
 
         {/* Nav section */}
         <div className="mb-1">
-          <p className="text-[10px] text-slate-700 font-semibold uppercase tracking-[0.15em] px-3 mb-2">Workspace</p>
+          <p className="text-[10px] text-slate-700 font-semibold uppercase tracking-[0.16em] px-3 mb-2.5">Workspace</p>
           <nav className="flex flex-col gap-1">
             <NavItem
               icon={<SyncIcon active={page === 'sync'} />}
@@ -133,21 +133,26 @@ export default function App() {
         <div className="flex-1" />
 
         {/* Status footer */}
-        <div className="mx-1 rounded-xl p-3 bg-white/[0.02] border border-white/[0.05]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <StatusDot status={serverStatus} />
-              <span className="text-xs text-slate-400 font-medium">{statusLabel}</span>
+        <div className="mx-1 rounded-xl overflow-hidden border border-white/[0.06] bg-white/[0.02]">
+          <div className="flex items-center gap-2.5 px-3 py-3 border-b border-white/[0.04]">
+            <StatusDot status={serverStatus} />
+            <span className="text-xs text-slate-400 font-medium flex-1">{statusLabel}</span>
+            <span className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full ${
+              serverStatus === 'online' ? 'bg-emerald-500/15 text-emerald-500' :
+              serverStatus === 'checking' ? 'bg-amber-500/15 text-amber-500' :
+              'bg-red-500/15 text-red-500'
+            }`}>{serverStatus === 'online' ? 'live' : serverStatus === 'checking' ? '...' : 'off'}</span>
+          </div>
+          <div className="px-3 py-2.5">
+            <div className="text-[10px] text-slate-600">
+              {indexSize > 0 ? (
+                <span className="text-emerald-600 font-semibold">✓ {indexSize} vectors indexed</span>
+              ) : (
+                <span>No documents indexed</span>
+              )}
             </div>
+            <div className="text-[10px] text-slate-700 mt-1 font-mono">localhost:8000</div>
           </div>
-          <div className="text-[10px] text-slate-600 leading-relaxed">
-            {indexSize > 0 ? (
-              <span className="text-emerald-600 font-medium">✓ {indexSize} vectors indexed</span>
-            ) : (
-              <span>No documents indexed</span>
-            )}
-          </div>
-          <div className="text-[10px] text-slate-700 mt-1 font-mono">localhost:8000</div>
         </div>
       </aside>
 
